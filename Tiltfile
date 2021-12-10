@@ -26,8 +26,10 @@ config.define_string("namespace", False, "Kubernetes namespace to use")
 
 # These arguments will enable writing Guardian events to a cloud BigTable instance.
 # Writing to a cloud BigTable is optional. These arguments are not required to run the devnet.
-config.define_string("gcpProject", False, "GCP project ID for BigTable persistence")
-config.define_string("bigTableKeyPath", False, "Path to BigTable json key file")
+config.define_string("gcpProject", False,
+                     "GCP project ID for BigTable persistence")
+config.define_string("bigTableKeyPath", False,
+                     "Path to BigTable json key file")
 
 # When running Tilt on a server, this can be used to set the public hostname Tilt runs on
 # for service links in the UI to work.
@@ -42,7 +44,8 @@ cfg = config.parse()
 num_guardians = int(cfg.get("num", "1"))
 namespace = cfg.get("namespace", "wormhole")
 gcpProject = cfg.get("gcpProject", "local-dev")
-bigTableKeyPath = cfg.get("bigTableKeyPath", "./event_database/devnet_key.json")
+bigTableKeyPath = cfg.get(
+    "bigTableKeyPath", "./event_database/devnet_key.json")
 webHost = cfg.get("webHost", "localhost")
 ci = cfg.get("ci", False)
 pyth = cfg.get("pyth", ci)
@@ -54,36 +57,38 @@ bridge_ui = cfg.get("bridge_ui", ci)
 if not ci:
     namespace_create(namespace)
 
+
 def k8s_yaml_with_ns(objects):
     return k8s_yaml(namespace_inject(objects, namespace))
 
 # protos
 
+
 proto_deps = ["./proto", "./generate-protos.sh", "buf.yaml", "buf.gen.yaml"]
 
 local_resource(
-    name = "proto-gen",
-    deps = proto_deps,
-    cmd = "tilt docker build -- --target go-export -f Dockerfile.proto -o type=local,dest=node .",
-    env = {"DOCKER_BUILDKIT": "1"},
+    name="proto-gen",
+    deps=proto_deps,
+    cmd="tilt docker build -- --target go-export -f Dockerfile.proto -o type=local,dest=node .",
+    env={"DOCKER_BUILDKIT": "1"},
 )
 
 local_resource(
-    name = "proto-gen-web",
-    deps = proto_deps,
-    resource_deps = ["proto-gen"],
-    cmd = "tilt docker build -- --target node-export -f Dockerfile.proto -o type=local,dest=. .",
-    env = {"DOCKER_BUILDKIT": "1"},
+    name="proto-gen-web",
+    deps=proto_deps,
+    resource_deps=["proto-gen"],
+    cmd="tilt docker build -- --target node-export -f Dockerfile.proto -o type=local,dest=. .",
+    env={"DOCKER_BUILDKIT": "1"},
 )
 
 # wasm
 
 local_resource(
-    name = "wasm-gen",
-    deps = ["solana"],
-    dir = "solana",
-    cmd = "tilt docker build -- -f Dockerfile.wasm -o type=local,dest=.. .",
-    env = {"DOCKER_BUILDKIT": "1"},
+    name="wasm-gen",
+    deps=["solana"],
+    dir="solana",
+    cmd="tilt docker build -- -f Dockerfile.wasm -o type=local,dest=.. .",
+    env={"DOCKER_BUILDKIT": "1"},
 )
 
 # node
@@ -92,15 +97,16 @@ if explorer:
     k8s_yaml_with_ns(
         secret_yaml_generic(
             "node-bigtable-key",
-            from_file = "bigtable-key.json=" + bigTableKeyPath,
+            from_file="bigtable-key.json=" + bigTableKeyPath,
         ),
     )
 
 docker_build(
-    ref = "guardiand-image",
-    context = "node",
-    dockerfile = "node/Dockerfile",
+    ref="guardiand-image",
+    context="node",
+    dockerfile="node/Dockerfile",
 )
+
 
 def build_node_yaml():
     node_yaml = read_yaml_stream("devnet/node.yaml")
@@ -128,40 +134,62 @@ def build_node_yaml():
 
     return encode_yaml_stream(node_yaml)
 
+
 k8s_yaml_with_ns(build_node_yaml())
 
-k8s_resource("guardian", resource_deps = ["proto-gen", "solana-devnet"], port_forwards = [
-    port_forward(6060, name = "Debug/Status Server [:6060]", host = webHost),
-    port_forward(7070, name = "Public gRPC [:7070]", host = webHost),
-    port_forward(7071, name = "Public REST [:7071]", host = webHost),
-    port_forward(2345, name = "Debugger [:2345]", host = webHost),
+k8s_resource("guardian", resource_deps=["proto-gen", "solana-devnet"], port_forwards=[
+    port_forward(6060, name="Debug/Status Server [:6060]", host=webHost),
+    port_forward(7070, name="Public gRPC [:7070]", host=webHost),
+    port_forward(7071, name="Public REST [:7071]", host=webHost),
+    port_forward(2345, name="Debugger [:2345]", host=webHost),
 ])
 
 # spy
 k8s_yaml_with_ns("devnet/spy.yaml")
 
-k8s_resource("spy", resource_deps = ["proto-gen", "guardian"], port_forwards = [
-    port_forward(6061, container_port = 6060, name = "Debug/Status Server [:6061]", host = webHost),
-    port_forward(7072, name = "Spy gRPC [:7072]", host = webHost),
+k8s_resource("spy", resource_deps=["proto-gen", "guardian"], port_forwards=[
+    port_forward(6061, container_port=6060,
+                 name="Debug/Status Server [:6061]", host=webHost),
+    port_forward(7072, name="Spy gRPC [:7072]", host=webHost),
 ])
+
+# stacks-devent
+
+docker_build(
+    ref="stacks-image",
+    context="stacks",
+    dockerfile="stacks/Dockerfile",
+)
+
+# stacks-devnet
+
+k8s_yaml_with_ns("devnet/stacks-devnet.yaml")
+
+k8s_resource(
+    "stacks",
+    port_forwards=[
+        port_forward(20443, name="Stacks RPC [:20443]", host=webHost),
+    ],
+)
+
 
 # solana client cli (used for devnet setup)
 
 docker_build(
-    ref = "bridge-client",
-    context = ".",
-    only = ["./proto", "./solana", "./ethereum", "./clients"],
-    dockerfile = "Dockerfile.client",
+    ref="bridge-client",
+    context=".",
+    only=["./proto", "./solana", "./ethereum", "./clients"],
+    dockerfile="Dockerfile.client",
     # Ignore target folders from local (non-container) development.
-    ignore = ["./solana/*/target"],
+    ignore=["./solana/*/target"],
 )
 
 # solana smart contract
 
 docker_build(
-    ref = "solana-contract",
-    context = "solana",
-    dockerfile = "solana/Dockerfile",
+    ref="solana-contract",
+    context="solana",
+    dockerfile="solana/Dockerfile",
 )
 
 # solana local devnet
@@ -170,30 +198,30 @@ k8s_yaml_with_ns("devnet/solana-devnet.yaml")
 
 k8s_resource(
     "solana-devnet",
-    resource_deps = ["wasm-gen"],
-    port_forwards = [
-        port_forward(8899, name = "Solana RPC [:8899]", host = webHost),
-        port_forward(8900, name = "Solana WS [:8900]", host = webHost),
-        port_forward(9000, name = "Solana PubSub [:9000]", host = webHost),
+    resource_deps=["wasm-gen"],
+    port_forwards=[
+        port_forward(8899, name="Solana RPC [:8899]", host=webHost),
+        port_forward(8900, name="Solana WS [:8900]", host=webHost),
+        port_forward(9000, name="Solana PubSub [:9000]", host=webHost),
     ],
 )
 
 # eth devnet
 
 docker_build(
-    ref = "eth-node",
-    context = "./ethereum",
-    dockerfile = "./ethereum/Dockerfile",
+    ref="eth-node",
+    context="./ethereum",
+    dockerfile="./ethereum/Dockerfile",
 
     # ignore local node_modules (in case they're present)
-    ignore = ["./ethereum/node_modules"],
+    ignore=["./ethereum/node_modules"],
 
     # sync external scripts for incremental development
     # (everything else needs to be restarted from scratch for determinism)
     #
     # This relies on --update-mode=exec to work properly with a non-root user.
     # https://github.com/tilt-dev/tilt/issues/3708
-    live_update = [
+    live_update=[
         sync("./ethereum/src", "/home/node/app/src"),
     ],
 )
@@ -201,47 +229,47 @@ docker_build(
 if pyth:
     # pyth autopublisher
     docker_build(
-        ref = "pyth",
-        context = ".",
-        dockerfile = "third_party/pyth/Dockerfile.pyth",
+        ref="pyth",
+        context=".",
+        dockerfile="third_party/pyth/Dockerfile.pyth",
     )
     k8s_yaml_with_ns("./devnet/pyth.yaml")
 
-    k8s_resource("pyth", resource_deps = ["solana-devnet"])
+    k8s_resource("pyth", resource_deps=["solana-devnet"])
 
     # pyth2wormhole client autoattester
     docker_build(
-        ref = "p2w-attest",
-        context = ".",
-        only = ["./solana", "./third_party"],
-        dockerfile = "./third_party/pyth/Dockerfile.p2w-attest",
-        ignore = ["./solana/*/target"],
+        ref="p2w-attest",
+        context=".",
+        only=["./solana", "./third_party"],
+        dockerfile="./third_party/pyth/Dockerfile.p2w-attest",
+        ignore=["./solana/*/target"],
     )
 
     k8s_yaml_with_ns("devnet/p2w-attest.yaml")
     k8s_resource(
         "p2w-attest",
-        resource_deps = ["solana-devnet", "pyth", "guardian"],
-        port_forwards = [],
+        resource_deps=["solana-devnet", "pyth", "guardian"],
+        port_forwards=[],
     )
 
 k8s_yaml_with_ns("devnet/eth-devnet.yaml")
 
-k8s_resource("eth-devnet", port_forwards = [
-    port_forward(8545, name = "Ganache RPC [:8545]", host = webHost),
+k8s_resource("eth-devnet", port_forwards=[
+    port_forward(8545, name="Ganache RPC [:8545]", host=webHost),
 ])
 
-k8s_resource("eth-devnet2", port_forwards = [
-    port_forward(8546, name = "Ganache RPC [:8546]", host = webHost),
+k8s_resource("eth-devnet2", port_forwards=[
+    port_forward(8546, name="Ganache RPC [:8546]", host=webHost),
 ])
 
 if bridge_ui:
     docker_build(
-        ref = "bridge-ui",
-        context = ".",
-        only = ["./ethereum", "./sdk", "./bridge_ui"],
-        dockerfile = "bridge_ui/Dockerfile",
-        live_update = [
+        ref="bridge-ui",
+        context=".",
+        only=["./ethereum", "./sdk", "./bridge_ui"],
+        dockerfile="bridge_ui/Dockerfile",
+        live_update=[
             sync("./bridge_ui/src", "/app/bridge_ui/src"),
         ],
     )
@@ -250,13 +278,14 @@ if bridge_ui:
 
     k8s_resource(
         "bridge-ui",
-        resource_deps = ["proto-gen-web", "wasm-gen"],
-        port_forwards = [
-            port_forward(3000, name = "Bridge UI [:3000]", host = webHost),
+        resource_deps=["proto-gen-web", "wasm-gen"],
+        port_forwards=[
+            port_forward(3000, name="Bridge UI [:3000]", host=webHost),
         ],
     )
 
 # bigtable
+
 
 def build_cloud_function(container_name, go_func_name, path, builder):
     # Invokes Tilt's custom_build(), with a Pack command.
@@ -294,54 +323,57 @@ def build_cloud_function(container_name, go_func_name, path, builder):
         container_name,
         pack_build_cmd + " && " + docker_tag_cmd,
         [path],
-        tag = tag,
-        skips_local_docker = skips_local_docker,
-        disable_push = disable_push,
+        tag=tag,
+        skips_local_docker=skips_local_docker,
+        disable_push=disable_push,
     )
+
 
 if explorer:
     local_resource(
-        name = "devnet-cloud-function",
-        cmd = "tilt docker -- build -f ./event_database/cloud_functions/Dockerfile.run . -t devnet-cloud-function --label builtby=tilt",
-        env = {"DOCKER_BUILDKIT": "1"},
-        labels = ["explorer"],
+        name="devnet-cloud-function",
+        cmd="tilt docker -- build -f ./event_database/cloud_functions/Dockerfile.run . -t devnet-cloud-function --label builtby=tilt",
+        env={"DOCKER_BUILDKIT": "1"},
+        labels=["explorer"],
     )
 
     local_resource(
-        name = "pack-bin",
-        cmd = "go build -mod=readonly -o bin/pack github.com/buildpacks/pack/cmd/pack",
-        dir = "tools",
-        labels = ["explorer"],
+        name="pack-bin",
+        cmd="go build -mod=readonly -o bin/pack github.com/buildpacks/pack/cmd/pack",
+        dir="tools",
+        labels=["explorer"],
     )
 
     k8s_yaml_with_ns("devnet/bigtable.yaml")
 
     k8s_resource(
         "bigtable-emulator",
-        port_forwards = [port_forward(8086, name = "BigTable clients [:8086]", host = webHost)],
-        labels = ["explorer"],
+        port_forwards=[port_forward(
+            8086, name="BigTable clients [:8086]", host=webHost)],
+        labels=["explorer"],
     )
 
     build_cloud_function(
-        container_name = "bigtable-functions",
-        go_func_name = "Entry",
-        path = "./event_database/cloud_functions",
-        builder = "gcr.io/buildpacks/builder:v1",
+        container_name="bigtable-functions",
+        go_func_name="Entry",
+        path="./event_database/cloud_functions",
+        builder="gcr.io/buildpacks/builder:v1",
     )
     k8s_resource(
         "bigtable-functions",
-        resource_deps = ["proto-gen", "bigtable-emulator"],
-        port_forwards = [port_forward(8090, name = "BigTable Functions [:8090]", host = webHost)],
-        labels = ["explorer"],
+        resource_deps=["proto-gen", "bigtable-emulator"],
+        port_forwards=[port_forward(
+            8090, name="BigTable Functions [:8090]", host=webHost)],
+        labels=["explorer"],
     )
 
     # explorer web app
     docker_build(
-        ref = "explorer",
-        context = "./explorer",
-        dockerfile = "./explorer/Dockerfile",
-        ignore = ["./explorer/node_modules"],
-        live_update = [
+        ref="explorer",
+        context="./explorer",
+        dockerfile="./explorer/Dockerfile",
+        ignore=["./explorer/node_modules"],
+        live_update=[
             sync("./explorer/src", "/home/node/app/src"),
             sync("./explorer/public", "/home/node/app/public"),
         ],
@@ -351,38 +383,38 @@ if explorer:
 
     k8s_resource(
         "explorer",
-        resource_deps = ["proto-gen-web"],
-        port_forwards = [
-            port_forward(8001, name = "Explorer Web UI [:8001]", host = webHost),
+        resource_deps=["proto-gen-web"],
+        port_forwards=[
+            port_forward(8001, name="Explorer Web UI [:8001]", host=webHost),
         ],
-        labels = ["explorer"],
+        labels=["explorer"],
     )
 
 # terra devnet
 
 docker_build(
-    ref = "terra-image",
-    context = "./terra/devnet",
-    dockerfile = "terra/devnet/Dockerfile",
+    ref="terra-image",
+    context="./terra/devnet",
+    dockerfile="terra/devnet/Dockerfile",
 )
 
 docker_build(
-    ref = "terra-contracts",
-    context = "./terra",
-    dockerfile = "./terra/Dockerfile",
+    ref="terra-contracts",
+    context="./terra",
+    dockerfile="./terra/Dockerfile",
 )
 
 k8s_yaml_with_ns("devnet/terra-devnet.yaml")
 
 k8s_resource(
     "terra-terrad",
-    port_forwards = [
-        port_forward(26657, name = "Terra RPC [:26657]", host = webHost),
-        port_forward(1317, name = "Terra LCD [:1317]", host = webHost),
+    port_forwards=[
+        port_forward(26657, name="Terra RPC [:26657]", host=webHost),
+        port_forward(1317, name="Terra LCD [:1317]", host=webHost),
     ],
 )
 
 k8s_resource(
     "terra-fcd",
-    port_forwards = [port_forward(3060, name = "Terra FCD [:3060]", host = webHost)],
+    port_forwards=[port_forward(3060, name="Terra FCD [:3060]", host=webHost)],
 )

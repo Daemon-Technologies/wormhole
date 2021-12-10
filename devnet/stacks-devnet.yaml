@@ -1,0 +1,50 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: stakcs
+  name: stacks
+spec:
+  ports:
+  - name: rpc
+    port: 20443
+    protocol: TCP
+  selector:
+    app: stacks
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: stacks
+  name: stacks
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stacks
+  template:
+    metadata:
+      labels:
+        app: stacks
+    spec:
+      containers:
+      - name: stacks
+        image: stacks-image
+        args:
+        - start
+        - --config
+        - /src/stacks-node/Config.toml
+        command: 
+        - /bin/stacks-node
+        ports:
+        - containerPort: 20443
+        - containerPort: 20444
+        readinessProbe:
+          httpGet:
+            path: /v2/info
+            port: 20443
+        resources: {}
+      restartPolicy: Always
+  serviceName: stacks
